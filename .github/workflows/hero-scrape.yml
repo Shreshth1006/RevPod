@@ -1,0 +1,23 @@
+# Put this at .github/workflows/hero-scrape.yml
+name: TOI hero slot tracker
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"   # every 30 min, off the :00 rush
+  workflow_dispatch:
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python hero_scraper.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

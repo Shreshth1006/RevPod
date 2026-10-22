@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hero Slot Tracker</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg:#f6f6f4; --surface-1:#fcfcfb; --surface-2:#f0efec; --border:#e3e2dd;
+  --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#8a8984;
+  --grid:#e9e8e3; --axis:#c9c8c2; --link:#1c5cab;
+  --series-1:#2a78d6; --series-2:#eb6834; --series-3:#1baf7a;
+  --nodata:#d9d8d2;
+  --good:#1a7f37; --warn:#b26b00; --crit:#c62828;
+  --tag-bg:#ecebe7;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg:#121211; --surface-1:#1a1a19; --surface-2:#232321; --border:#2f2f2c;
+    --text-primary:#f0efec; --text-secondary:#c3c2b7; --text-muted:#8d8c84;
+    --grid:#2a2a27; --axis:#45443f; --link:#86b6ef;
+    --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70;
+    --nodata:#3a3a36;
+    --good:#4cc26a; --warn:#e0a030; --crit:#ef6b6b;
+    --tag-bg:#2a2a27;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:#121211; --surface-1:#1a1a19; --surface-2:#232321; --border:#2f2f2c;
+  --text-primary:#f0efec; --text-secondary:#c3c2b7; --text-muted:#8d8c84;
+  --grid:#2a2a27; --axis:#45443f; --link:#86b6ef;
+  --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70;
+  --nodata:#3a3a36;
+  --good:#4cc26a; --warn:#e0a030; --crit:#ef6b6b;
+  --tag-bg:#2a2a27;
+}
+* { box-sizing: border-box; }
+html, body { margin:0; }
+body {
+  background: var(--bg); color: var(--text-primary);
+  font: 14px/1.45 ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 20px 16px 48px; }
+
+header { display:flex; flex-wrap:wrap; gap:12px 24px; align-items:flex-end; justify-content:space-between; margin-bottom:20px; }
+h1 { font-size:20px; margin:0; letter-spacing:-.01em; }
+.sub { color: var(--text-secondary); font-size:13px; margin-top:2px; }
+.status { display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:13px; color:var(--text-secondary); }
+.dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:6px; vertical-align:1px; }
+.pill { display:inline-flex; align-items:center; padding:3px 10px; border-radius:999px; background:var(--surface-1); border:1px solid var(--border); white-space:nowrap; }
+
+.controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.seg { display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:var(--surface-1); }
+.seg button { border:0; background:transparent; color:var(--text-secondary); font:inherit; font-size:13px; padding:6px 12px; cursor:pointer; }
+.seg button + button { border-left:1px solid var(--border); }
+.seg button[aria-pressed="true"] { background:var(--surface-2); color:var(--text-primary); font-weight:600; }
+.iconbtn { border:1px solid var(--border); background:var(--surface-1); color:var(--text-secondary); border-radius:8px; padding:6px 10px; font:inherit; font-size:13px; cursor:pointer; }
+
+h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-secondary); margin:28px 0 10px; font-weight:600; }
+.card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px; }
+
+/* live slots */
+.live { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; }
+.slot { padding:14px; display:flex; flex-direction:column; gap:10px; min-width:0; }
+.slot-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.slot-name { font-weight:700; font-size:13px; display:flex; align-items:center; gap:7px; }
+.swatch { width:10px; height:10px; border-radius:3px; display:inline-block; flex:none; }
+.tag { font-size:11px; padding:2px 7px; border-radius:5px; background:var(--tag-bg); color:var(--text-secondary); text-transform:uppercase; letter-spacing:.04em; }
+.thumb { width:100%; aspect-ratio:16/9; border-radius:8px; object-fit:cover; background:var(--surface-2); display:block; }
+.thumb.ph { display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:12px; }
+.hl { font-weight:600; font-size:15px; line-height:1.35; }
+.since { font-size:12.5px; color:var(--text-secondary); }
+.mini { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; border-top:1px solid var(--border); padding-top:10px; margin-top:auto; }
+.mini div { font-size:11.5px; color:var(--text-muted); }
+.mini b { display:block; font-size:16px; color:var(--text-primary); font-variant-numeric:tabular-nums; }
+
+/* chart */
+.chart-card { padding:14px 14px 8px; }
+.chart-top { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
+.legend { display:flex; gap:14px; flex-wrap:wrap; font-size:12.5px; color:var(--text-secondary); }
+.legend span { display:inline-flex; align-items:center; gap:6px; }
+.nd-sw { background: repeating-linear-gradient(45deg, var(--nodata) 0 2px, transparent 2px 5px); border:1px solid var(--nodata); }
+#chart { position:relative; height:260px; }
+#chart svg { display:block; width:100%; height:100%; }
+.tip { position:absolute; pointer-events:none; background:var(--surface-1); border:1px solid var(--border); border-radius:8px; padding:8px 10px; font-size:12.5px; box-shadow:0 4px 16px rgba(0,0,0,.12); min-width:150px; z-index:5; display:none; }
+.tip .t { font-weight:600; margin-bottom:4px; }
+.tip .r { display:flex; justify-content:space-between; gap:14px; color:var(--text-secondary); }
+.tip .r b { color:var(--text-primary); font-variant-numeric:tabular-nums; }
+.tip .note { color:var(--text-muted); margin-top:4px; font-size:11.5px; }
+.chart-note { font-size:12px; color:var(--text-muted); padding:4px 2px 4px; }
+
+/* slot history */
+.hist-top { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin:28px 0 10px; }
+.hist-top h2 { margin:0; }
+#slotpick { display:none; }
+.hist { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; align-items:start; }
+.col { padding:14px 14px 6px; min-width:0; }
+.col-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:12px; }
+.col-head .slot-name { font-size:14px; }
+.col-head .cnt { font-size:12px; color:var(--text-muted); }
+.tl { position:relative; margin:0; padding:0; list-style:none; }
+.st { position:relative; padding:0 0 16px 20px; }
+.st::before { content:""; position:absolute; left:4px; top:12px; bottom:-2px; width:2px; background:var(--border); }
+.st:last-child::before { display:none; }
+.st .pt { position:absolute; left:0; top:4px; width:10px; height:10px; border-radius:50%; background:var(--surface-1); border:2px solid var(--c); }
+.st.now .pt { background:var(--c); }
+.st-time { display:flex; justify-content:space-between; gap:8px; font-size:12px; color:var(--text-secondary); font-variant-numeric:tabular-nums; }
+.dur { font-weight:600; color:var(--text-primary); white-space:nowrap; }
+.st.now .dur::before { content:"● "; color:var(--good); }
+.st-body { display:flex; gap:10px; margin-top:6px; }
+.st-img { width:72px; flex:none; aspect-ratio:16/9; object-fit:cover; border-radius:5px; background:var(--surface-2); display:block; }
+.st-img.ph { display:flex; align-items:center; justify-content:center; font-size:10px; color:var(--text-muted); }
+.st-hl { font-weight:600; font-size:13.5px; line-height:1.35; min-width:0; overflow-wrap:anywhere; }
+.st:not(.now) .st-hl { font-weight:500; }
+.chips { display:flex; flex-wrap:wrap; gap:4px 6px; margin-top:6px; }
+.chip { font-size:11px; padding:1px 6px; border-radius:4px; background:var(--tag-bg); color:var(--text-secondary); white-space:nowrap; }
+.edits { margin:6px 0 0; padding:0; list-style:none; font-size:12px; color:var(--text-secondary); }
+.edits li { margin-top:3px; }
+.edits b { font-variant-numeric:tabular-nums; color:var(--text-muted); font-weight:500; margin-right:4px; }
+.edits s { color:var(--text-muted); }
+.empty { padding:18px 4px; text-align:center; color:var(--text-muted); font-size:13px; }
+.more { display:block; width:100%; border:0; border-top:1px solid var(--border); background:transparent; color:var(--link); font:inherit; font-size:13px; padding:9px; cursor:pointer; margin-top:4px; }
+
+.banner { padding:14px 16px; border-radius:10px; border:1px solid var(--border); background:var(--surface-1); margin-bottom:16px; }
+.banner.err { border-color: var(--crit); }
+.banner code { background:var(--surface-2); padding:1px 5px; border-radius:4px; }
+.vh { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+
+@media (max-width: 860px) {
+  .live { grid-template-columns:1fr; }
+  .slot { display:grid; grid-template-columns: 120px minmax(0,1fr); grid-template-areas:"head head" "img hl" "img since" "mini mini"; column-gap:12px; row-gap:6px; }
+  .slot-head { grid-area:head; } .thumb { grid-area:img; } .hl { grid-area:hl; font-size:14px; } .since { grid-area:since; } .mini { grid-area:mini; }
+  #slotpick { display:inline-flex; }
+  .hist { grid-template-columns:1fr; }
+  .hist .col:not(.active) { display:none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Hero slots 10 · 11 · 12</h1>
+      <div class="sub">TOI homepage · Top Stories · <code>col_2.items[9–11]</code></div>
+    </div>
+    <div class="status" id="status"></div>
+  </header>
+
+  <div id="banner"></div>
+
+  <div class="controls" style="justify-content:space-between">
+    <div class="seg" id="range" role="group" aria-label="Time range">
+      <button data-v="24h" aria-pressed="true">24 hours</button>
+      <button data-v="7d" aria-pressed="false">7 days</button>
+      <button data-v="30d" aria-pressed="false">30 days</button>
+    </div>
+    <button class="iconbtn" id="refresh">↻ Refresh</button>
+  </div>
+
+  <h2>Live now</h2>
+  <div class="live" id="live"></div>
+
+  <h2 id="chart-title">How often they change</h2>
+  <div class="card chart-card">
+    <div class="chart-top">
+      <div class="legend" id="legend"></div>
+      <div class="seg" id="metric" role="group" aria-label="Metric">
+        <button data-v="story" aria-pressed="true">Story swaps</button>
+        <button data-v="headline" aria-pressed="false">Headline edits</button>
+        <button data-v="all" aria-pressed="false">All changes</button>
+      </div>
+    </div>
+    <div id="chart" role="img" aria-label="Changes per time bucket by slot"><div class="tip" id="tip"></div></div>
+    <div class="chart-note" id="chart-note"></div>
+  </div>
+
+  <div class="hist-top">
+    <h2>Slot history · what held each slot and what replaced it</h2>
+    <div class="seg" id="slotpick" role="group" aria-label="Slot">
+      <button data-v="10" aria-pressed="true">Slot 10</button>
+      <button data-v="11" aria-pressed="false">Slot 11</button>
+      <button data-v="12" aria-pressed="false">Slot 12</button>
+    </div>
+  </div>
+  <div class="hist" id="hist"></div>
+</div>
+
+<script>
+/* ================= CONFIG =================
+   Supabase -> Project Settings -> API:
+   SUPABASE_URL = Project URL, SUPABASE_ANON_KEY = anon / publishable key (read-only via RLS).
+   Never put the service_role key here. */
+const SUPABASE_URL = "https://ywndhaquxxfhmiuvmpva.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3bmRoYXF1eHhmaG1pdXZtcHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2NDYxMTIsImV4cCI6MjEwODIyMjExMn0.KIbIqvbdLGiu2cMYRzN3DMAWvwYVF_O9y1M3zfh6Q3Y";
+const EXPECTED_RUN_MINUTES = 30;     // cron interval, used for data-coverage %
+const STALE_AFTER_MINUTES = 75;      // status turns amber/red after this
+const AUTO_REFRESH_MS = 5 * 60 * 1000;
+/* ========================================== */
+
+const SLOTS = [10, 11, 12];
+const SLOT_VAR = { 10: "--series-1", 11: "--series-2", 12: "--series-3" };
+const IST_OFFSET = 330 * 60 * 1000;
+const state = { range: "24h", metric: "story", pick: "10", histLimit: { 10: 15, 11: 15, 12: 15 }, timeline: [],
+                live: [], changes: [], runs: [], lastRun: null };
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const safeUrl = u => /^https?:\/\//i.test(u || "") ? u : "";
+
+function fmtDur(min) {
+  if (min == null || isNaN(min)) return "–";
+  min = Math.max(0, Math.round(min));
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60), m = min % 60;
+  if (h < 24) return m ? `${h}h ${m}m` : `${h}h`;
+  const d = Math.floor(h / 24), hh = h % 24;
+  return hh ? `${d}d ${hh}h` : `${d}d`;
+}
+const istParts = d => {
+  const x = new Date(new Date(d).getTime() + IST_OFFSET);
+  return { y: x.getUTCFullYear(), mo: x.getUTCMonth(), d: x.getUTCDate(), h: x.getUTCHours(), mi: x.getUTCMinutes() };
+};
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const pad = n => String(n).padStart(2, "0");
+const fmtTime = d => { const p = istParts(d); return `${pad(p.h)}:${pad(p.mi)}`; };
+const fmtDate = d => { const p = istParts(d); return `${p.d} ${MON[p.mo]}`; };
+const minsAgo = d => (Date.now() - new Date(d).getTime()) / 60000;
+
+/* ---------- data ---------- */
+async function sbGet(path, params = {}) {
+  const out = [];
+  const page = 1000;
+  for (let offset = 0; ; offset += page) {
+    const q = new URLSearchParams({ ...params, limit: page, offset });
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}?${q}`, {
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } });
+    if (!r.ok) throw new Error(`${path}: HTTP ${r.status} ${await r.text()}`);
+    const rows = await r.json();
+    out.push(...rows);
+    if (rows.length < page || params.limit) break;
+  }
+  return out;
+}
+
+function rangeBuckets() {
+  // buckets aligned to IST hours (24h) or IST days (7d/30d)
+  const hourly = state.range === "24h";
+  const n = { "24h": 24, "7d": 7, "30d": 30 }[state.range];
+  const step = hourly ? 3600e3 : 86400e3;
+  const nowIst = Date.now() + IST_OFFSET;
+  const endIst = Math.floor(nowIst / step) * step;           // start of current bucket, IST clock
+  const buckets = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const startIst = endIst - i * step;
+    buckets.push({ start: startIst - IST_OFFSET, end: startIst - IST_OFFSET + step, hourly });
+  }
+  return buckets;
+}
+
+async function load() {
+  if (SUPABASE_URL.includes("YOUR-PROJECT")) {
+    $("#banner").innerHTML = `<div class="banner">Set <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> at the top of the script in <code>index.html</code>.</div>`;
+    return;
+  }
+  const buckets = rangeBuckets();
+  const since = new Date(buckets[0].start).toISOString();
+  try {
+    const [live, changes, runs, last, timeline] = await Promise.all([
+      sbGet("hero_live", { select: "*", order: "slot.asc", limit: 10 }),
+      sbGet("hero_changes", { select: "*", run_at: `gte.${since}`, order: "run_at.desc" }),
+      sbGet("hero_runs", { select: "run_at", run_at: `gte.${since}`, order: "run_at.asc" }),
+      sbGet("hero_runs", { select: "run_at", order: "run_at.desc", limit: 1 }),
+      sbGet("hero_slot_timeline", { select: "*", last_seen_at: `gte.${since}`, order: "entered_at.desc" })
+        .catch(e => { throw new Error(/hero_slot_timeline/.test(e.message) && /404|PGRST205|does not exist/.test(e.message)
+          ? "The hero_slot_timeline view is missing — run slot_timeline.sql in the Supabase SQL Editor." : e.message); }),
+    ]);
+    Object.assign(state, { live, changes, runs, buckets, timeline, lastRun: last[0]?.run_at || null });
+    $("#banner").innerHTML = "";
+    render();
+  } catch (e) {
+    $("#banner").innerHTML = `<div class="banner err"><b>Couldn't load data.</b> ${esc(e.message)}</div>`;
+  }
+}
+
+/* ---------- render ---------- */
+function render() { renderStatus(); renderLive(); renderChart(); renderHistory(); }
+
+function renderStatus() {
+  const { lastRun, runs, buckets } = state;
+  if (!lastRun) { $("#status").innerHTML = `<span class="pill">No runs yet</span>`; return; }
+  const ago = minsAgo(lastRun);
+  const color = ago <= STALE_AFTER_MINUTES ? "var(--good)" : ago <= STALE_AFTER_MINUTES * 3 ? "var(--warn)" : "var(--crit)";
+  const label = ago <= STALE_AFTER_MINUTES ? "Tracking" : "Stale";
+  const spanMin = (Math.min(Date.now(), buckets.at(-1).end) - buckets[0].start) / 60000;
+  const expected = Math.max(1, Math.floor(spanMin / EXPECTED_RUN_MINUTES));
+  const cov = Math.min(100, Math.round(runs.length / expected * 100));
+  $("#status").innerHTML =
+    `<span class="pill"><span class="dot" style="background:${color}"></span>${label} · last run ${fmtTime(lastRun)} IST (${fmtDur(ago)} ago)</span>` +
+    `<span class="pill">${runs.length} runs · ${cov}% coverage</span>`;
+}
+
+function slotStats(slot) {
+  const ch = state.changes.filter(c => c.slot === slot);
+  const swaps = ch.filter(c => c.change_type === "story");
+  const held = swaps.map(c => +c.old_held_minutes).filter(x => !isNaN(x));
+  return {
+    swaps: swaps.length,
+    edits: ch.filter(c => c.change_type === "headline" || c.new_headline_edited).length,
+    avgHold: held.length ? held.reduce((a, b) => a + b, 0) / held.length : null,
+  };
+}
+
+function thumb(url, cls = "thumb") {
+  const u = safeUrl(url);
+  return u ? `<img class="${cls}" src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`
+           : `<div class="${cls} ph">no image</div>`;
+}
+
+function renderLive() {
+  const bySlot = Object.fromEntries(state.live.map(r => [r.slot, r]));
+  $("#live").innerHTML = SLOTS.map(s => {
+    const r = bySlot[s], st = slotStats(s);
+    const sw = `<span class="swatch" style="background:var(${SLOT_VAR[s]})"></span>`;
+    if (!r) return `<div class="card slot"><div class="slot-head"><span class="slot-name">${sw}Slot ${s}</span></div><div class="since">No data</div></div>`;
+    const u = safeUrl(r.url);
+    const hl = r.kind === "ad" ? `Ad slot <span style="color:var(--text-muted);font-weight:400">(${esc(r.key.replace("ad:", ""))})</span>`
+             : u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(r.headline)}</a>` : esc(r.headline);
+    const img = r.kind === "story" ? thumb(r.image_url) : `<div class="thumb ph">${r.kind === "ad" ? "Ad creative not in feed" : esc(r.item_type)}</div>`;
+    return `<div class="card slot">
+      <div class="slot-head"><span class="slot-name">${sw}Slot ${s}</span><span class="tag">${esc(r.item_type || r.kind)}</span></div>
+      ${img}
+      <div class="hl">${hl}</div>
+      <div class="since">In this slot for <b>${fmtDur(minsAgo(r.occupant_since))}</b> · since ${fmtDate(r.occupant_since)}, ${fmtTime(r.occupant_since)}</div>
+      <div class="mini">
+        <div><b>${st.swaps}</b>story swaps</div>
+        <div><b>${fmtDur(st.avgHold)}</b>avg time held</div>
+        <div><b>${st.edits}</b>headline edits</div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function renderChart() {
+  const { buckets, changes, runs, metric } = state;
+  const rangeLabel = { "24h": "last 24 hours, per hour", "7d": "last 7 days, per day", "30d": "last 30 days, per day" }[state.range];
+  $("#chart-title").textContent = `How often they change · ${rangeLabel}`;
+  $("#legend").innerHTML = SLOTS.map(s => `<span><span class="swatch" style="background:var(${SLOT_VAR[s]})"></span>Slot ${s}</span>`).join("")
+    + `<span><span class="swatch nd-sw"></span>No runs (no data)</span>`;
+
+  const match = c => metric === "all" ? true
+    : metric === "headline" ? (c.change_type === "headline" || c.new_headline_edited)
+    : c.change_type === metric;
+  const data = buckets.map(b => {
+    const inB = t => { const x = new Date(t).getTime(); return x >= b.start && x < b.end; };
+    const counts = Object.fromEntries(SLOTS.map(s => [s, 0]));
+    changes.forEach(c => { if (inB(c.run_at) && match(c) && counts[c.slot] != null) counts[c.slot]++; });
+    const nRuns = runs.filter(r => inB(r.run_at)).length;
+    const future = b.start > Date.now();
+    return { ...b, counts, total: SLOTS.reduce((a, s) => a + counts[s], 0), nRuns, future };
+  });
+
+  const box = $("#chart"), W = box.clientWidth, H = box.clientHeight;
+  const m = { l: 34, r: 8, t: 10, b: 26 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const maxV = Math.max(1, ...data.map(d => d.total));
+  const step = maxV <= 5 ? 1 : maxV <= 10 ? 2 : Math.ceil(maxV / 5);
+  const yMax = Math.ceil(maxV / step) * step;
+  const y = v => m.t + ih - (v / yMax) * ih;
+  const band = iw / data.length;
+  const bw = Math.max(4, Math.min(28, band * 0.62));
+
+  let g = `<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <rect width="2" height="6" fill="${css("--nodata")}"/></pattern></defs>`;
+  for (let v = 0; v <= yMax; v += step) {
+    g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 0 ? css("--axis") : css("--grid")}" stroke-width="1"/>`;
+    g += `<text x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="${css("--text-muted")}">${v}</text>`;
+  }
+  const labelEvery = data[0].hourly ? 3 : data.length > 10 ? 5 : 1;
+  data.forEach((d, i) => {
+    const cx = m.l + band * i + band / 2;
+    if (!d.nRuns && !d.future) g += `<rect x="${m.l + band * i + 1}" y="${m.t}" width="${band - 2}" height="${ih}" fill="url(#hatch)" opacity=".7"/>`;
+    let base = y(0);
+    const segs = SLOTS.filter(s => d.counts[s] > 0);
+    segs.forEach((s, k) => {
+      const h = (d.counts[s] / yMax) * ih;
+      const top = k === segs.length - 1;
+      const gap = k > 0 ? 2 : 0;
+      const hh = Math.max(1, h - gap), yy = base - h;
+      const r = top ? Math.min(4, hh, bw / 2) : 0, x0 = cx - bw / 2;
+      g += `<path fill="var(${SLOT_VAR[s]})" d="M${x0},${base - gap} V${yy + r} Q${x0},${yy} ${x0 + r},${yy} H${x0 + bw - r} Q${x0 + bw},${yy} ${x0 + bw},${yy + r} V${base - gap} Z"/>`;
+      base -= h;
+    });
+    if ((data.length - 1 - i) % labelEvery === 0) {
+      const lab = d.hourly ? `${pad(istParts(d.start).h)}:00` : fmtDate(d.start);
+      g += `<text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="11" fill="${css("--text-muted")}">${lab}</text>`;
+    }
+    g += `<rect class="hit" data-i="${i}" x="${m.l + band * i}" y="${m.t}" width="${band}" height="${ih}" fill="transparent"/>`;
+  });
+  box.querySelector("svg")?.remove();
+  box.insertAdjacentHTML("afterbegin", `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true">${g}<rect id="hl" x="0" y="${m.t}" width="0" height="${ih}" fill="${css("--text-primary")}" opacity=".05" pointer-events="none"/></svg>`);
+
+  const tip = $("#tip"), hl = box.querySelector("#hl");
+  const mlabel = { story: "story swaps", headline: "headline edits", all: "changes" }[metric];
+  box.querySelectorAll(".hit").forEach(el => {
+    el.addEventListener("mousemove", ev => {
+      const d = data[+el.dataset.i];
+      hl.setAttribute("x", el.getAttribute("x")); hl.setAttribute("width", el.getAttribute("width"));
+      const when = d.hourly ? `${fmtDate(d.start)}, ${pad(istParts(d.start).h)}:00–${pad(istParts(d.end).h)}:00 IST` : `${fmtDate(d.start)} (IST)`;
+      tip.innerHTML = `<div class="t">${when}</div>` +
+        SLOTS.map(s => `<div class="r"><span><span class="swatch" style="background:var(${SLOT_VAR[s]});margin-right:6px"></span>Slot ${s}</span><b>${d.counts[s]}</b></div>`).join("") +
+        `<div class="note">${d.nRuns ? `${d.nRuns} run${d.nRuns > 1 ? "s" : ""} · ${mlabel}` : "No runs in this window — 0 means no data"}</div>`;
+      tip.style.display = "block";
+      const rect = box.getBoundingClientRect();
+      let x = ev.clientX - rect.left + 14; if (x + tip.offsetWidth > rect.width) x = ev.clientX - rect.left - tip.offsetWidth - 14;
+      tip.style.left = `${Math.max(0, x)}px`; tip.style.top = `${Math.max(0, ev.clientY - rect.top - 20)}px`;
+    });
+    el.addEventListener("mouseleave", () => { tip.style.display = "none"; hl.setAttribute("width", 0); });
+  });
+
+  const total = data.reduce((a, d) => a + d.total, 0);
+  const gaps = data.filter(d => !d.nRuns && !d.future).length;
+  $("#chart-note").textContent = `${total} ${mlabel} in range` + (gaps ? ` · ${gaps} ${data[0].hourly ? "hour" : "day"}${gaps > 1 ? "s" : ""} with no runs (hatched)` : "");
+}
+
+function renderHistory() {
+  const link = (u, t) => safeUrl(u) ? `<a href="${esc(safeUrl(u))}" target="_blank" rel="noopener">${esc(t)}</a>` : esc(t);
+  const ms = t => new Date(t).getTime();
+  $("#hist").innerHTML = SLOTS.map(slot => {
+    const stints = state.timeline.filter(r => r.slot === slot);
+    const swaps = stints.filter(r => !r.is_first_tracked && ms(r.entered_at) >= state.buckets[0].start).length;
+    const lim = state.histLimit[slot];
+    const items = stints.slice(0, lim).map(r => {
+      const now = r.is_current;
+      const end = now ? Date.now() : ms(r.left_at);
+      const held = (end - ms(r.entered_at)) / 60000;
+      const range = `${fmtDate(r.entered_at)}, ${fmtTime(r.entered_at)} → ${now ? "now" : (fmtDate(r.left_at) === fmtDate(r.entered_at) ? "" : fmtDate(r.left_at) + ", ") + fmtTime(r.left_at)}`;
+      const chips = [];
+      if (r.is_first_tracked) chips.push("there when tracking began");
+      else if (r.came_from_slot) chips.push(`came from slot ${r.came_from_slot}`);
+      else if (r.kind === "story") chips.push("new to hero");
+      if (!now) chips.push(r.went_to_slot ? `moved to slot ${r.went_to_slot}` : (r.kind === "story" ? "dropped off hero" : "replaced"));
+      if (r.headline_rewritten_on_entry) chips.push("headline rewritten on the move");
+      if (r.image_changes > 0) chips.push(`image changed ×${r.image_changes}`);
+      // headline edits while it sat in this slot
+      const edits = state.changes.filter(c => c.slot === slot && c.change_type === "headline"
+        && ms(c.run_at) >= ms(r.entered_at) && (now || ms(c.run_at) < end));
+      const editList = edits.length ? `<ul class="edits">${edits.slice().reverse().map(c =>
+        `<li><b>${fmtTime(c.run_at)}</b>edited · was <s>${esc(c.old_headline)}</s></li>`).join("")}</ul>`
+        : (r.headline_edits > 0 ? `<ul class="edits"><li>headline edited ×${r.headline_edits} · first: <s>${esc(r.first_headline)}</s></li></ul>` : "");
+      const img = r.kind === "story"
+        ? (safeUrl(r.image_url) ? `<img class="st-img" src="${esc(safeUrl(r.image_url))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : `<div class="st-img ph">no image</div>`)
+        : `<div class="st-img ph">${esc(r.kind)}</div>`;
+      const hl = r.kind === "ad" ? `Ad slot <span style="color:var(--text-muted);font-weight:400">${esc((r.key || "").replace("ad:", ""))}</span>` : link(r.url, r.headline);
+      return `<li class="st${now ? " now" : ""}" style="--c:var(${SLOT_VAR[slot]})">
+        <span class="pt"></span>
+        <div class="st-time"><span>${range}</span><span class="dur">${fmtDur(held)}</span></div>
+        <div class="st-body">${img}<div class="st-hl">${hl}</div></div>
+        <div class="chips">${chips.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div>
+        ${editList}
+      </li>`;
+    }).join("");
+    const more = stints.length > lim ? `<button class="more" data-slot="${slot}">Show ${Math.min(15, stints.length - lim)} older</button>` : "";
+    return `<div class="card col${String(slot) === state.pick ? " active" : ""}">
+      <div class="col-head"><span class="slot-name"><span class="swatch" style="background:var(${SLOT_VAR[slot]})"></span>Slot ${slot}</span>
+        <span class="cnt">${stints.length} stor${stints.length === 1 ? "y" : "ies"} · ${swaps} swap${swaps === 1 ? "" : "s"} in range</span></div>
+      ${items ? `<ol class="tl">${items}</ol>` : `<div class="empty">Nothing recorded in this range.</div>`}
+      ${more}
+    </div>`;
+  }).join("");
+  $("#hist").querySelectorAll(".more").forEach(b => b.addEventListener("click", () => { state.histLimit[b.dataset.slot] += 15; renderHistory(); }));
+}
+
+/* ---------- controls ---------- */
+function seg(id, key, after) {
+  $(id).addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    $(id).querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    state[key] = b.dataset.v; after();
+  });
+}
+seg("#range", "range", () => { state.histLimit = { 10: 15, 11: 15, 12: 15 }; load(); });
+seg("#metric", "metric", renderChart);
+seg("#slotpick", "pick", renderHistory);
+$("#refresh").addEventListener("click", load);
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => state.buckets && renderChart(), 120); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => state.buckets && renderChart());
+setInterval(load, AUTO_REFRESH_MS);
+load();
+</script>
+</body>
+</html>
