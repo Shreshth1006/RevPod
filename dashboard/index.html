@@ -61,6 +61,13 @@ h1 { font-size:20px; margin:0; letter-spacing:-.01em; }
 .seg button + button { border-left:1px solid var(--border); }
 .seg button[aria-pressed="true"] { background:var(--surface-2); color:var(--text-primary); font-weight:600; }
 .iconbtn { border:1px solid var(--border); background:var(--surface-1); color:var(--text-secondary); border-radius:8px; padding:6px 10px; font:inherit; font-size:13px; cursor:pointer; }
+.iconbtn:disabled { opacity:.55; cursor:default; }
+.iconbtn.primary { background:var(--text-primary); color:var(--surface-1); border-color:var(--text-primary); font-weight:600; }
+.dates { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--text-secondary); }
+.dates[hidden] { display:none; }
+.dates input { font:inherit; font-size:13px; color:var(--text-primary); background:var(--surface-1); border:1px solid var(--border); border-radius:8px; padding:5px 8px; color-scheme:inherit; }
+.runmsg { font-size:12.5px; color:var(--text-secondary); }
+.runmsg a { color:var(--link); text-decoration:underline; }
 
 h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-secondary); margin:28px 0 10px; font-weight:600; }
 .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px; }
@@ -74,7 +81,7 @@ h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(-
 .tag { font-size:11px; padding:2px 7px; border-radius:5px; background:var(--tag-bg); color:var(--text-secondary); text-transform:uppercase; letter-spacing:.04em; }
 .thumb { width:100%; aspect-ratio:16/9; border-radius:8px; object-fit:cover; background:var(--surface-2); display:block; }
 .thumb.ph { display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:12px; }
-.hl { font-weight:600; font-size:15px; line-height:1.35; }
+.hl { font-weight:600; font-size:15px; line-height:1.35; overflow-wrap:anywhere; }
 .since { font-size:12.5px; color:var(--text-secondary); }
 .mini { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; border-top:1px solid var(--border); padding-top:10px; margin-top:auto; }
 .mini div { font-size:11.5px; color:var(--text-muted); }
@@ -155,12 +162,25 @@ h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(-
   <div id="banner"></div>
 
   <div class="controls" style="justify-content:space-between">
-    <div class="seg" id="range" role="group" aria-label="Time range">
-      <button data-v="24h" aria-pressed="true">24 hours</button>
-      <button data-v="7d" aria-pressed="false">7 days</button>
-      <button data-v="30d" aria-pressed="false">30 days</button>
+    <div class="controls">
+      <div class="seg" id="range" role="group" aria-label="Time range">
+        <button data-v="24h" aria-pressed="true">24 hours</button>
+        <button data-v="7d" aria-pressed="false">7 days</button>
+        <button data-v="30d" aria-pressed="false">30 days</button>
+        <button data-v="custom" aria-pressed="false">Custom</button>
+      </div>
+      <span class="dates" id="dates" hidden>
+        <label class="vh" for="from">From date</label><input type="date" id="from">
+        <span>→</span>
+        <label class="vh" for="to">To date</label><input type="date" id="to">
+        <span>IST</span>
+      </span>
     </div>
-    <button class="iconbtn" id="refresh">↻ Refresh</button>
+    <div class="controls">
+      <span class="runmsg" id="runmsg" role="status"></span>
+      <button class="iconbtn primary" id="run">▶ Run scraper</button>
+      <button class="iconbtn" id="refresh">↻ Refresh</button>
+    </div>
   </div>
 
   <h2>Live now</h2>
@@ -201,12 +221,13 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const EXPECTED_RUN_MINUTES = 30;     // cron interval, used for data-coverage %
 const STALE_AFTER_MINUTES = 75;      // status turns amber/red after this
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
+const RUN_API = "/api/run-scraper";  // Vercel function that triggers the GitHub Action
 /* ========================================== */
 
 const SLOTS = [10, 11, 12];
 const SLOT_VAR = { 10: "--series-1", 11: "--series-2", 12: "--series-3" };
 const IST_OFFSET = 330 * 60 * 1000;
-const state = { range: "24h", metric: "story", pick: "10", histLimit: { 10: 15, 11: 15, 12: 15 }, timeline: [],
+const state = { range: "24h", from: null, to: null, metric: "story", pick: "10", histLimit: { 10: 15, 11: 15, 12: 15 }, timeline: [],
                 live: [], changes: [], runs: [], lastRun: null };
 
 const $ = s => document.querySelector(s);
@@ -234,34 +255,54 @@ const fmtDate = d => { const p = istParts(d); return `${p.d} ${MON[p.mo]}`; };
 const minsAgo = d => (Date.now() - new Date(d).getTime()) / 60000;
 
 /* ---------- data ---------- */
-async function sbGet(path, params = {}) {
+async function sbGet(path, params = []) {
+  // params: [[key, value], ...] — pairs, so the same column can be filtered twice (gte + lt)
   const out = [];
-  const page = 1000;
+  const single = params.find(([k]) => k === "limit");
+  const page = single ? +single[1] : 1000;
   for (let offset = 0; ; offset += page) {
-    const q = new URLSearchParams({ ...params, limit: page, offset });
+    const q = new URLSearchParams([...params.filter(([k]) => k !== "limit"), ["limit", page], ["offset", offset]]);
     const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}?${q}`, {
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } });
     if (!r.ok) throw new Error(`${path}: HTTP ${r.status} ${await r.text()}`);
     const rows = await r.json();
     out.push(...rows);
-    if (rows.length < page || params.limit) break;
+    if (rows.length < page || single) break;
   }
   return out;
 }
 
+const todayIst = () => new Date(Date.now() + IST_OFFSET).toISOString().slice(0, 10);   // "YYYY-MM-DD" in IST
+const istDayStart = d => Date.parse(d + "T00:00:00Z") - IST_OFFSET;                    // real ms at IST midnight
+const shiftDay = (d, n) => new Date(Date.parse(d + "T00:00:00Z") + n * 86400e3).toISOString().slice(0, 10);
+
 function rangeBuckets() {
-  // buckets aligned to IST hours (24h) or IST days (7d/30d)
-  const hourly = state.range === "24h";
-  const n = { "24h": 24, "7d": 7, "30d": 30 }[state.range];
-  const step = hourly ? 3600e3 : 86400e3;
-  const nowIst = Date.now() + IST_OFFSET;
-  const endIst = Math.floor(nowIst / step) * step;           // start of current bucket, IST clock
-  const buckets = [];
-  for (let i = n - 1; i >= 0; i--) {
-    const startIst = endIst - i * step;
-    buckets.push({ start: startIst - IST_OFFSET, end: startIst - IST_OFFSET + step, hourly });
+  // Hourly buckets for spans up to 2 days, daily otherwise — all aligned to the IST clock.
+  let start, end, hourly;
+  if (state.range === "custom") {
+    let a = state.from, b = state.to;
+    if (a > b) [a, b] = [b, a];
+    start = istDayStart(a); end = istDayStart(b) + 86400e3;
+    hourly = end - start <= 2 * 86400e3;
+  } else {
+    hourly = state.range === "24h";
+    const n = { "24h": 24, "7d": 7, "30d": 30 }[state.range];
+    const step = hourly ? 3600e3 : 86400e3;
+    const curIst = Math.floor((Date.now() + IST_OFFSET) / step) * step;   // start of current bucket, IST clock
+    end = curIst - IST_OFFSET + step;
+    start = end - n * step;
   }
+  const step = hourly ? 3600e3 : 86400e3;
+  const buckets = [];
+  for (let t = start; t < end; t += step) buckets.push({ start: t, end: t + step, hourly });
   return buckets;
+}
+
+function rangeLabel() {
+  const b = state.buckets, per = b[0].hourly ? "per hour" : "per day";
+  if (state.range !== "custom") return { "24h": "last 24 hours", "7d": "last 7 days", "30d": "last 30 days" }[state.range] + ", " + per;
+  const a = fmtDate(b[0].start), z = fmtDate(b.at(-1).end - 1);
+  return (a === z ? a : `${a} – ${z}`) + ", " + per;
 }
 
 async function load() {
@@ -271,13 +312,15 @@ async function load() {
   }
   const buckets = rangeBuckets();
   const since = new Date(buckets[0].start).toISOString();
+  const until = new Date(buckets.at(-1).end).toISOString();
   try {
     const [live, changes, runs, last, timeline] = await Promise.all([
-      sbGet("hero_live", { select: "*", order: "slot.asc", limit: 10 }),
-      sbGet("hero_changes", { select: "*", run_at: `gte.${since}`, order: "run_at.desc" }),
-      sbGet("hero_runs", { select: "run_at", run_at: `gte.${since}`, order: "run_at.asc" }),
-      sbGet("hero_runs", { select: "run_at", order: "run_at.desc", limit: 1 }),
-      sbGet("hero_slot_timeline", { select: "*", last_seen_at: `gte.${since}`, order: "entered_at.desc" })
+      sbGet("hero_live", [["select", "*"], ["order", "slot.asc"], ["limit", 10]]),
+      sbGet("hero_changes", [["select", "*"], ["run_at", `gte.${since}`], ["run_at", `lt.${until}`], ["order", "run_at.desc"]]),
+      sbGet("hero_runs", [["select", "run_at"], ["run_at", `gte.${since}`], ["run_at", `lt.${until}`], ["order", "run_at.asc"]]),
+      sbGet("hero_runs", [["select", "run_at"], ["order", "run_at.desc"], ["limit", 1]]),
+      // every story that sat in a slot at any point inside the range
+      sbGet("hero_slot_timeline", [["select", "*"], ["last_seen_at", `gte.${since}`], ["entered_at", `lt.${until}`], ["order", "entered_at.desc"]])
         .catch(e => { throw new Error(/hero_slot_timeline/.test(e.message) && /404|PGRST205|does not exist/.test(e.message)
           ? "The hero_slot_timeline view is missing — run slot_timeline.sql in the Supabase SQL Editor." : e.message); }),
     ]);
@@ -298,7 +341,7 @@ function renderStatus() {
   const ago = minsAgo(lastRun);
   const color = ago <= STALE_AFTER_MINUTES ? "var(--good)" : ago <= STALE_AFTER_MINUTES * 3 ? "var(--warn)" : "var(--crit)";
   const label = ago <= STALE_AFTER_MINUTES ? "Tracking" : "Stale";
-  const spanMin = (Math.min(Date.now(), buckets.at(-1).end) - buckets[0].start) / 60000;
+  const spanMin = Math.max(0, Math.min(Date.now(), buckets.at(-1).end) - buckets[0].start) / 60000;
   const expected = Math.max(1, Math.floor(spanMin / EXPECTED_RUN_MINUTES));
   const cov = Math.min(100, Math.round(runs.length / expected * 100));
   $("#status").innerHTML =
@@ -349,8 +392,7 @@ function renderLive() {
 
 function renderChart() {
   const { buckets, changes, runs, metric } = state;
-  const rangeLabel = { "24h": "last 24 hours, per hour", "7d": "last 7 days, per day", "30d": "last 30 days, per day" }[state.range];
-  $("#chart-title").textContent = `How often they change · ${rangeLabel}`;
+  $("#chart-title").textContent = `How often they change · ${rangeLabel()}`;
   $("#legend").innerHTML = SLOTS.map(s => `<span><span class="swatch" style="background:var(${SLOT_VAR[s]})"></span>Slot ${s}</span>`).join("")
     + `<span><span class="swatch nd-sw"></span>No runs (no data)</span>`;
 
@@ -382,7 +424,7 @@ function renderChart() {
     g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 0 ? css("--axis") : css("--grid")}" stroke-width="1"/>`;
     g += `<text x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="${css("--text-muted")}">${v}</text>`;
   }
-  const labelEvery = data[0].hourly ? 3 : data.length > 10 ? 5 : 1;
+  const labelEvery = data[0].hourly ? (data.length > 24 ? 6 : 3) : data.length > 45 ? 7 : data.length > 10 ? 5 : 1;
   data.forEach((d, i) => {
     const cx = m.l + band * i + band / 2;
     if (!d.nRuns && !d.future) g += `<rect x="${m.l + band * i + 1}" y="${m.t}" width="${band - 2}" height="${ih}" fill="url(#hatch)" opacity=".7"/>`;
@@ -485,7 +527,66 @@ function seg(id, key, after) {
     state[key] = b.dataset.v; after();
   });
 }
-seg("#range", "range", () => { state.histLimit = { 10: 15, 11: 15, 12: 15 }; load(); });
+function syncRangeUI() {
+  $("#range").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x.dataset.v === state.range));
+  $("#dates").hidden = state.range !== "custom";
+  const t = todayIst();
+  $("#from").max = $("#to").max = t;
+  if (state.range === "custom") { $("#from").value = state.from; $("#to").value = state.to; }
+  // keep the selection in the URL so a filtered view can be shared
+  const q = state.range === "custom" ? `?from=${state.from}&to=${state.to}` : state.range === "24h" ? "" : `?range=${state.range}`;
+  try { history.replaceState(null, "", location.pathname + q); } catch (e) {}
+}
+function setRange(r) {
+  state.range = r;
+  if (r === "custom" && !state.from) { state.to = todayIst(); state.from = shiftDay(state.to, -6); }
+  state.histLimit = { 10: 15, 11: 15, 12: 15 };
+  syncRangeUI(); load();
+}
+$("#range").addEventListener("click", e => { const b = e.target.closest("button"); if (b) setRange(b.dataset.v); });
+["#from", "#to"].forEach(id => $(id).addEventListener("change", () => {
+  const f = $("#from").value, t = $("#to").value;
+  if (!f || !t) return;
+  [state.from, state.to] = f <= t ? [f, t] : [t, f];
+  setRange("custom");
+}));
+(() => {  // initial range from the URL: ?range=7d  or  ?from=2026-10-20&to=2026-10-22
+  const p = new URLSearchParams(location.search), re = /^\d{4}-\d{2}-\d{2}$/;
+  if (re.test(p.get("from") || "") && re.test(p.get("to") || "")) {
+    [state.from, state.to] = p.get("from") <= p.get("to") ? [p.get("from"), p.get("to")] : [p.get("to"), p.get("from")];
+    state.range = "custom";
+  } else if (["24h", "7d", "30d"].includes(p.get("range"))) state.range = p.get("range");
+  syncRangeUI();
+})();
+
+/* ---------- run scraper (GitHub Action via the Vercel function) ---------- */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function runMsg(text, href) { $("#runmsg").innerHTML = esc(text) + (href ? ` · <a href="${esc(href)}" target="_blank" rel="noopener">log</a>` : ""); }
+async function runScraper() {
+  if (location.protocol === "file:") { runMsg("Run works on the Vercel deployment, not the local file."); return; }
+  const btn = $("#run"); btn.disabled = true; runMsg("Starting…");
+  try {
+    const r = await fetch(RUN_API, { method: "POST" });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { runMsg(j.error || `Couldn't start (HTTP ${r.status})`, j.run?.html_url); return; }
+    const since = Date.parse(j.dispatched_at) - 10e3;
+    runMsg("Queued on GitHub…");
+    for (const t0 = Date.now(); Date.now() - t0 < 4 * 60e3; ) {
+      await sleep(5000);
+      const s = await fetch(RUN_API, { cache: "no-store" }).then(x => x.json()).catch(() => null);
+      const run = s?.run;
+      if (!run || Date.parse(run.created_at) < since) continue;          // our run hasn't shown up yet
+      if (run.status !== "completed") { runMsg(run.status === "in_progress" ? "Running…" : "Queued on GitHub…", run.html_url); continue; }
+      if (run.conclusion === "success") { runMsg("Done ✓ data updated"); await load(); }
+      else runMsg(`Run ${run.conclusion}`, run.html_url);
+      return;
+    }
+    runMsg("Still running — check GitHub Actions");
+  } catch (e) {
+    runMsg("Couldn't reach the run endpoint");
+  } finally { btn.disabled = false; }
+}
+$("#run").addEventListener("click", runScraper);
 seg("#metric", "metric", renderChart);
 seg("#slotpick", "pick", renderHistory);
 $("#refresh").addEventListener("click", load);
